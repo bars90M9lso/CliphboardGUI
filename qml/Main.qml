@@ -13,7 +13,7 @@ ApplicationWindow {
     maximumWidth: 400
     minimumHeight: 550
     maximumHeight: 550
-
+    
     color: "#171a21"
 
     readonly property color backgroundColor: "#171a21"
@@ -23,6 +23,9 @@ ApplicationWindow {
     readonly property color accentColor: "#80bfff"
     readonly property color textColor: "#edf0f5"
     readonly property color secondaryTextColor: "#929baa"
+
+    property bool keyboardNavigation: false
+    property point lastMousePos: Qt.point(-1, -1)
 
     Timer {
         id: closeTimer
@@ -79,17 +82,23 @@ ApplicationWindow {
         ListView {
             id: clipboardList
 
+            focus: true
+            keyNavigationEnabled: true
+            keyNavigationWraps: true
+            
             Layout.fillWidth: true
             Layout.fillHeight: true
 
             clip: true
             spacing: 8
+            highlightMoveDuration: 99
 
             model: clipboard.model
 
             delegate: Rectangle {
                 id: itemCard
 
+                required property int index
                 required property var model
 
                 readonly property bool isImage:
@@ -99,9 +108,11 @@ ApplicationWindow {
                 height: isImage ? 190 : 76
 
                 radius: 10
-                color: mouseArea.containsMouse
-                       ? cardHoverColor
-                       : cardColor
+                color: window.keyboardNavigation
+                    ? (ListView.isCurrentItem ? cardHoverColor : cardColor)
+                    : (mouseArea.containsMouse ? cardHoverColor : cardColor)
+
+
 
                 border.width: 1
                 border.color: borderColor
@@ -143,8 +154,8 @@ ApplicationWindow {
 
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-
-                            source: itemCard.model.Preview
+                            
+                            source: itemCard.isImage ? itemCard.model.Preview : ""
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
                             cache: true
@@ -227,12 +238,39 @@ ApplicationWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton
-
                     z: -1
 
                     onClicked: {
                         clipboard.CopyItem(itemCard.model.ItemID)
                         window.close()
+                    }
+
+                    onPositionChanged: (mouse) => 
+                    {
+                        var globalPos = mapToItem(window.contentItem, mouse.x, mouse.y)
+                        if (Math.abs(globalPos.x - window.lastMousePos.x) > 0.5 ||
+                            Math.abs(globalPos.y - window.lastMousePos.y) > 0.5) 
+                        {
+                            window.lastMousePos = globalPos
+                            window.keyboardNavigation = false
+                            clipboardList.currentIndex = itemCard.index
+                        }
+                    }
+                }
+
+                Keys.onPressed: (event) => 
+                {
+                    if (event.modifiers === (Qt.ControlModifier) && event.key === Qt.Key_X) 
+                    {
+                        clipboard.RemoveItem(itemCard.model.ItemID)
+                    }
+
+                    if (event.modifiers === Qt.AltModifier &&
+                        event.nativeScanCode === 53) {
+                        clipboard.SetPinned(
+                            itemCard.model.ItemID,
+                            !itemCard.model.Pinned
+                        )
                     }
                 }
             }
@@ -252,6 +290,29 @@ ApplicationWindow {
 
             ScrollBar.vertical: ScrollBar {
                 policy: ScrollBar.AsNeeded
+            }
+
+            Keys.onReturnPressed: (event) => 
+            {
+                if (currentItem !== null) {
+                    clipboard.CopyItem(currentItem.model.ItemID)
+                    window.close()
+                    event.accepted = true    
+                }                
+            }
+
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Up ||
+                    event.key === Qt.Key_Down ||
+                    event.key === Qt.Key_Left ||
+                    event.key === Qt.Key_Right) {
+                    keyboardNavigation = true
+                }
+
+                if (event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier) && event.key === Qt.Key_X)
+                {
+                    clipboard.ClearHistory()
+                }
             }
         }
 
@@ -289,4 +350,10 @@ ApplicationWindow {
             }
         }
     }
+
+    Shortcut {
+        sequence: "Escape"
+        onActivated: window.close()
+    }
 }
+
